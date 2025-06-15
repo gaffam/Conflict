@@ -15,8 +15,14 @@ This project collects news from multiple RSS feeds, converts them into a GeoJSON
 Install dependencies and start the server:
 
 ```bash
+```bash
+# For production
+pip install -r requirements.txt
+gunicorn server:app
+
+# For development
 pip install feedparser flask
 python3 server.py
-```
+
 
 Open `http://localhost:8000` in your browser to view the map. Use the floating panels to manage RSS feeds and refresh data.
