@@ -51,3 +51,4 @@ function ShelterGame({ lang = 'EN' }) {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<ShelterGame lang="HE" />);
 
+
