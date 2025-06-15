@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>News Map</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@3.4.1/dist/tailwind.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <style>
+    html, body, #map { height: 100%; margin: 0; }
+  </style>
+</head>
+<body class="bg-gray-100">
+  <div id="root" class="h-full"></div>
+
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+  <script type="text/babel">
+    const countryColors = {
+      Israel: 'blue',
+      Palestine: 'purple',
+      Iran: 'red',
+      Syria: 'orange',
+      Lebanon: 'green'
+    };
+    const severityColors = {
+      high: 'red',
+      medium: 'orange',
+      info: 'lightblue'
+    };
+
+    const airportKeywords = [
+      'ben gurion airport',
+      'tlv airport',
+      'flights',
+      'canceled',
+      'diverted'
+    ];
+
+    const emergencyNumbers = [
+      { key: 'police', num: '100' },
+      { key: 'ambulance', num: '101' },
+      { key: 'fire', num: '102' },
+      { key: 'civil', num: '104' },
+      { key: 'municipality', num: '106' },
+      { key: 'embassy', num: '+972 3 524 7886' },
+      { key: 'consulate', num: '+972 2 583 5666' }
+    ];
+
+    const TEXTS = {
+      EN: {
+        rssFeeds: 'RSS Feeds',
+        add: 'Add',
+        update: 'Update Now',
+        latest: 'Latest News',
+        loading: 'Refreshing map...',
+        airport: 'Airport Info',
+        emergency: 'Emergency Numbers',
+        police: 'Police',
+        ambulance: 'Ambulance',
+        fire: 'Fire',
+        civil: 'Civil Defense',
+        municipality: 'Municipality Line',
+        embassy: 'Turkish Embassy',
+        consulate: 'Turkish Consulate',
+        eventMap: 'Event Map',
+        trafficMap: 'Traffic Map'
+      },
+      HE: {
+        rssFeeds: 'מקורות RSS',
+        add: 'הוסף',
+        update: 'עדכן',
+        latest: 'חדשות אחרונות',
+        loading: 'מעדכן מפה...',
+        airport: 'מידע על שדה התעופה',
+        emergency: 'מספרי חירום',
+        police: 'משטרה',
+        ambulance: 'אמבולנס',
+        fire: 'כבאות',
+        civil: 'פיקוד העורף',
+        municipality: 'מוקד עירוני',
+        embassy: 'שגרירות טורקיה',
+        consulate: 'הקונסוליה הטורקית',
+        eventMap: 'מפת אירועים',
+        trafficMap: 'מפת תנועה'
+      }
+    };
+
+    function App() {
+      const [alerts, setAlerts] = React.useState([]);
+      const [feeds, setFeeds] = React.useState([]);
+      const [filter, setFilter] = React.useState(null);
+      const [lang, setLang] = React.useState('EN');
+      const [view, setView] = React.useState('events');
+      const mapRef = React.useRef(null);
+      const clusterRef = React.useRef(null);
+      const urlRef = React.useRef(null);
+      const [loading, setLoading] = React.useState(false);
+      const [updating, setUpdating] = React.useState(false);
+
+      React.useEffect(() => {
+        mapRef.current = L.map('map').setView([31.5, 34.75], 7);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '© OpenStreetMap contributors'
+        }).addTo(mapRef.current);
+        clusterRef.current = L.markerClusterGroup();
+        mapRef.current.addLayer(clusterRef.current);
+        loadFeeds();
+        loadData();
+      }, []);
+
+      function loadFeeds() {
+        fetch('/feeds').then(r => r.json()).then(setFeeds);
+      }
+
+      function loadData() {
+        setLoading(true);
+        fetch('data.geojson?v=' + Date.now())
+          .then(r => r.json())
+          .then(data => setAlerts(data.features))
+          .finally(() => setLoading(false));
+      }
+
+      const airportAlerts = React.useMemo(
+        () =>
+          alerts.filter(a => {
+            const t = a.properties.baslik.toLowerCase();
+            return airportKeywords.some(k => t.includes(k));
+          }),
+        [alerts]
+      );
+
+      React.useEffect(() => {
+        if (!clusterRef.current) return;
+        clusterRef.current.clearLayers();
+        const filtered = alerts.filter(f => !filter || f.properties.country === filter);
+        filtered.forEach(f => {
+          const c = f.geometry.coordinates;
+          const latlng = [c[1], c[0]];
+          const color = countryColors[f.properties.country] || 'gray';
+          const fill = severityColors[f.properties.severity] || 'white';
+          const marker = L.circleMarker(latlng, {
+            radius: 8,
+            color,
+            fillColor: fill,
+            fillOpacity: 0.7
+          }).bindPopup(
+            `<b>${f.properties.lokasyon}</b><br>${f.properties.baslik}<br>` +
+            `<small>${f.properties.tarih} - ${f.properties.kaynak}</small><br>` +
+            `<i>Severity: ${f.properties.severity}</i><br>` +
+            `<a href="${f.properties.link}" target="_blank">Habere git</a>`
+          );
+          clusterRef.current.addLayer(marker);
+        });
+      }, [alerts, filter]);
+
+      function addFeed() {
+        const url = urlRef.current.value.trim();
+        if(!url) return;
+        fetch('/feeds', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})})
+          .then(loadFeeds);
+        urlRef.current.value='';
+      }
+
+      function removeFeed(u) {
+        if(!confirm('Silmek istedigine emin misin?')) return;
+        fetch('/feeds', {method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:u})})
+          .then(loadFeeds);
+      }
+
+      function updateNow(){
+        setUpdating(true);
+        fetch('/update', {method:'POST'})
+          .then(()=>loadData())
+          .finally(()=>setUpdating(false));
+      }
+
+      return (
+        <div className="w-full h-full relative">
+          <div className="absolute top-0 right-0 m-2">
+            <button
+              className="bg-gray-800 text-white px-2 py-1 rounded"
+              onClick={() => setLang(lang === 'EN' ? 'HE' : 'EN')}
+            >
+              {lang === 'EN' ? 'HE' : 'EN'}
+            </button>
+          </div>
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 m-2 flex space-x-1">
+            <button
+              className={`${view==='events'?'bg-blue-600 text-white':'bg-white'} px-2 py-1 rounded`}
+              onClick={() => setView('events')}
+            >
+              {TEXTS[lang].eventMap}
+            </button>
+            <button
+              className={`${view==='traffic'?'bg-blue-600 text-white':'bg-white'} px-2 py-1 rounded`}
+              onClick={() => setView('traffic')}
+            >
+              {TEXTS[lang].trafficMap}
+            </button>
+          </div>
+          <div id="map" className={`${view==='events'?'block':'hidden'} w-full h-full`}></div>
+          {view==='traffic' && (
+            <iframe src="https://maps.app.goo.gl/XUFuK5purWYafFQJA" className="w-full h-full border-0"></iframe>
+          )}
+          {loading && (
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-white/90 px-2 py-1 rounded shadow text-xs">
+              {TEXTS[lang].loading}
+            </div>
+          )}
+          <div className="absolute top-10 right-0 m-2 bg-white/90 p-2 rounded shadow max-h-60 overflow-y-auto text-sm">
+            <h3 className="font-bold mb-1">{TEXTS[lang].rssFeeds}</h3>
+            <ul>
+              {feeds.map(u => (
+                <li key={u} className="flex justify-between items-center mb-1">
+                  <span className="text-xs break-all mr-1">{u}</span>
+                  <button className="text-red-600" onClick={() => removeFeed(u)}>x</button>
+                </li>
+              ))}
+            </ul>
+            <div className="flex mt-2">
+              <input ref={urlRef} className="border flex-grow text-xs mr-1" placeholder="https://example.com/rss" />
+              <button className="bg-blue-500 text-white px-2" onClick={addFeed}>{TEXTS[lang].add}</button>
+            </div>
+          </div>
+          <div className="absolute bottom-0 left-0 m-2">
+            <button className="bg-green-600 text-white px-3 py-1 rounded flex items-center" onClick={updateNow}>
+              {updating && <span className="border-2 border-white border-t-transparent rounded-full h-4 w-4 mr-2 animate-spin"></span>}
+              {TEXTS[lang].update}
+            </button>
+          </div>
+          <div className="absolute left-0 top-0 m-2 bg-white/90 p-2 rounded shadow max-h-60 overflow-y-auto text-sm">
+            <h3 className="font-bold mb-1">{TEXTS[lang].latest}</h3>
+            {alerts.slice(0,20).map((f,i)=>(
+              <div key={i} className="mb-1 border-b pb-1">
+                <button className="font-semibold" onClick={() => setFilter(f.properties.country)}>{f.properties.country}</button> - {f.properties.lokasyon}
+                <div className="text-xs">{f.properties.tarih}</div>
+                <a href={f.properties.link} target="_blank" className="text-blue-600 text-xs">Link</a>
+              </div>
+            ))}
+          </div>
+          <div className="absolute right-0 bottom-28 m-2 bg-white/90 p-2 rounded shadow max-h-40 overflow-y-auto text-sm">
+            <h3 className="font-bold mb-1">{TEXTS[lang].airport}</h3>
+            {airportAlerts.map((a,i)=>(
+              <div key={i} className="mb-1 border-b pb-1">
+                <div className="text-xs font-semibold">{a.properties.baslik}</div>
+                <div className="text-xs">{a.properties.tarih}</div>
+                <a href={a.properties.link} target="_blank" className="text-blue-600 text-xs">Link</a>
+              </div>
+            ))}
+          </div>
+          <div className="absolute right-0 bottom-0 m-2 bg-white/90 p-2 rounded shadow text-sm">
+            <h3 className="font-bold mb-1">{TEXTS[lang].emergency}</h3>
+            <ul>
+              {emergencyNumbers.map((n,i)=>(
+                <li key={i}>{TEXTS[lang][n.key]}: {n.num}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+</html>

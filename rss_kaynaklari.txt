@@ -1,0 +1,3 @@
+http://feeds.reuters.com/reuters/worldNews
+https://www.jpost.com/rss/rss.aspx
+https://www.timesofisrael.com/feed/
