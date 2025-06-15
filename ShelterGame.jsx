@@ -48,5 +48,7 @@ function ShelterGame({ lang = 'EN' }) {
 }
 
 // sample usage
-ReactDOM.render(<ShelterGame lang="HE" />, document.getElementById('root'));
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<ShelterGame lang="HE" />);
+
 
